@@ -4,14 +4,114 @@
 'use strict';
 
 const assert = require('assert');
-const {Brontide} = require('../lib/net/brontide');
+const {CipherState, Brontide} = require('../lib/net/brontide');
 
 const HELLO = Buffer.from('hello', 'ascii');
 const PROLOGUE = 'lightning';
+const EMPTY = Buffer.alloc(0);
 
 /*
  * Tests
  */
+
+describe('CipherState', function() {
+
+  it('should encrypt the provided plaintext, and return a tag', () => {
+    const key = Buffer.from('2121212121212121212121212121212121212121212121212121212121212121', 'hex');
+    const salt = Buffer.from('1111111111111111111111111111111111111111111111111111111111111111', 'hex');
+
+    let cipher = new CipherState();
+    let cipher2 = new CipherState();
+
+    cipher.initSalt(key, salt);
+    cipher2.initSalt(key, salt);
+
+    //Ciphers are identical
+    assert.deepEqual(cipher, cipher2);
+
+    let plaintext = HELLO;
+
+    let ad = Buffer.from('1212121212121212121212121212121212121212121212121212121212121212', 'hex');
+
+		// let ad = HELLO;
+
+		let tag = cipher.encrypt(plaintext, ad);
+
+    //passes
+    assert.strictEqual(tag.toString('hex'), '08ab955fd853077c452acf41fb2c3d28')
+
+    //Nonce has incremented.
+    assert.strictEqual(cipher.nonce, 1);
+
+    //Ensure Cipher2 has not changed.
+    assert.strictEqual(cipher2.nonce, 0);
+
+    //Run cipher2 with same parameters
+    let tag2 = cipher2.encrypt(plaintext, ad);
+
+    //Tag2 should give the same value as tag1 since the ciphers are identical.
+    //But this fails.
+    // assert.strictEqual(tag2.toString('hex'), "08ab955fd853077c452acf41fb2c3d28");
+
+
+    //Further test -> Decrypt will also fail on an odd/even basis. if AD is not divisible by 16 (Does not occur in HSD, but for further example)
+    //
+
+    //Encryption cipher
+    let cipher3 = new CipherState();
+
+    cipher3.initSalt(key, salt);
+
+    //Decryption ciphers
+    let cipher4 = new CipherState();
+    let cipher5 = new CipherState();
+
+    cipher4.initSalt(key, salt);
+    cipher5.initSalt(key, salt);
+
+    assert.deepEqual(cipher4, cipher5);
+
+    //Using a non-16 divisable buffer for the ad to trigger padding
+    let ad3 = HELLO;
+    //Using an ad that results in 0 from the =%16 operation makes both result and result2 return true.
+    // let ad3 = ad;
+
+    let tag3 = cipher3.encrypt(EMPTY, ad3);
+
+    assert.strictEqual(tag3.toString('hex'), '597ac91c03e699ff502c3588b45ee921');
+
+
+
+    //Now attempt to decrypt -> Both ciphers *Should* be able to decrypt from my understanding as they are the exact same.
+
+    let result = cipher4.decrypt(EMPTY, tag3, ad3);
+
+    //throw in another encryption attempt to trigger this weird behavior
+    let cipher6 = new CipherState();
+    cipher6.initSalt(key, salt);
+
+    let tag6 = cipher6.encrypt(HELLO, ad);
+    //End encryption
+
+    let result2 = cipher5.decrypt(EMPTY, tag3, ad3);
+
+    //Passes
+    assert.strictEqual(result, true);
+
+    //Fails
+    // assert.strictEqual(result2, true);
+
+    //This behavior also causes the tests below to fail.
+    //If we run one more encryption operation with a non-16 divisible plaintext, those tests will pass again.
+    //Uncomment this to pass the below tests.
+    // let cipher7 = new CipherState();
+    // cipher7.initSalt(key, salt);
+
+    // let tag7 = cipher7.encrypt(HELLO, ad);
+  });
+
+
+});
 
 describe('Brontide', function() {
   let initiator = null;
